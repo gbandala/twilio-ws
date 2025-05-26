@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: voice-assistant-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_POOL_SIZE=${DB_POOL_SIZE}
+      - DB_IDLE_TIMEOUT=${DB_IDLE_TIMEOUT}
+      - DB_SYNC=${DB_SYNC}
+    volumes:
+      - ./logs:/app/logs
+
