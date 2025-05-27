@@ -27,7 +27,7 @@ class App {
     const expressApp = express();
     this.wsInstance = expressWsModule.default(expressApp);
     this.app = this.wsInstance.app;
-    
+
     // **ORDEN CRÍTICO**: 
     // 1. Middlewares básicos
     this.configureMiddlewares();
@@ -46,24 +46,24 @@ class App {
 
     try {
       console.log('🚀 Inicializando aplicación...');
-      
+
       // **PASO 1**: Inicializar WebSockets PRIMERO
       console.log('🔧 Inicializando WebSockets...');
       await WebSocketManagerService.initializeWebSockets(this.wsInstance);
       console.log('✅ WebSockets inicializados correctamente');
-      
+
       // **PASO 2**: Configurar rutas que dependen de WebSocket
       this.configureTwilioRoutes();
       console.log('✅ Rutas de Twilio configuradas');
-      
+
       // **PASO 3**: Configurar manejo de errores AL FINAL
       console.log('🛡️ Configurando manejo de errores...');
       this.configureErrorHandling();
       console.log('✅ Manejo de errores configurado');
-      
+
       this.initialized = true;
       console.log('✅ Aplicación inicializada completamente');
-      
+
     } catch (error) {
       console.error('❌ Error inicializando aplicación:', error);
       throw error;
@@ -91,7 +91,7 @@ class App {
    */
   private configureBasicRoutes(): void {
     // **IMPORTANTE**: Solo rutas específicas, NO usar '/' catch-all aún
-    
+
     // Ruta de salud
     this.app.get('/health', (req: Request, res: Response) => {
       res.json({
@@ -110,7 +110,7 @@ class App {
           method: Object.keys(r.route.methods).join(',').toUpperCase(),
           path: r.route.path
         }));
-      
+
       res.json({
         message: 'Rutas registradas',
         routes: allRoutes,
@@ -118,6 +118,84 @@ class App {
         timestamp: new Date().toISOString()
       });
     });
+
+    // Agrega estos endpoints en tu app.ts, en el método configureBasicRoutes()
+
+    // Endpoint para ver estado de WebSockets
+    this.app.get('/debug/websockets', (req: Request, res: Response) => {
+      try {
+        const status = WebSocketManagerService.getStatus();
+        res.json({
+          success: true,
+          timestamp: new Date().toISOString(),
+          data: status
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Error desconocido'
+        });
+      }
+    });
+
+    // Endpoint para debug específico de una conexión
+    this.app.get('/debug/connection/:connectionId', (req: Request, res: Response) => {
+      try {
+        const connectionId = req.params.connectionId;
+        const debug = WebSocketManagerService.getConnectionDebug(connectionId);
+
+        if (!debug) {
+          return res.status(404).json({
+            success: false,
+            message: 'Conexión no encontrada'
+          });
+        }
+
+        res.json({
+          success: true,
+          timestamp: new Date().toISOString(),
+          data: debug
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Error desconocido'
+        });
+      }
+    });
+
+    // Endpoint para test de conectividad con servicios
+    this.app.get('/debug/services', async (req: Request, res: Response) => {
+      try {
+        // Test Deepgram API
+        const testApiKey = process.env.DEEPGRAM_API_KEY ? 'Configurada' : 'NO CONFIGURADA';
+        const testVoiceModel = process.env.VOICE_MODEL || 'No configurado';
+
+        // Test OpenAI
+        const testOpenAI = process.env.OPENAI_API_KEY ? 'Configurada' : 'NO CONFIGURADA';
+
+        res.json({
+          success: true,
+          timestamp: new Date().toISOString(),
+          environment: {
+            DEEPGRAM_API_KEY: testApiKey,
+            VOICE_MODEL: testVoiceModel,
+            OPENAI_API_KEY: testOpenAI,
+            SERVER: process.env.SERVER || 'No configurado'
+          },
+          services: {
+            websockets_initialized: this.initialized,
+            server_running: true
+          }
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Error desconocido'
+        });
+      }
+    });
+
   }
 
   /**
@@ -137,10 +215,10 @@ class App {
 
         const VoiceResponse = twiml.VoiceResponse;
         const response = new VoiceResponse();
-        
+
         // Mensaje inicial
         response.say({ language: 'es-MX' }, 'Conectando la llamada...');
-        
+
         const connect = response.connect();
         const stream = connect.stream({
           url: `wss://${process.env.SERVER}/connection`
@@ -173,9 +251,9 @@ class App {
 
         const VoiceResponse = twiml.VoiceResponse;
         const response = new VoiceResponse();
-        
+
         response.say({ language: 'es-MX' }, 'Conectando la llamada...');
-        
+
         const connect = response.connect();
         const stream = connect.stream({
           url: `wss://${process.env.SERVER}/connection`
@@ -222,7 +300,7 @@ class App {
     try {
       // Primero inicializar todo
       await this.initialize();
-      
+
       // Luego iniciar el servidor
       this.app.listen(port, () => {
         console.log(`🌟 Servidor corriendo en puerto ${port}`);
