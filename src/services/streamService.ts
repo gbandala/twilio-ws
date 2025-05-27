@@ -8,7 +8,6 @@ import { WebSocket } from 'ws';
  */
 export class StreamService extends EventEmitter {
   private ws: WebSocket | null = null;
-  // private ws: WebSocket | null = null;
   private expectedAudioIndex: number;
   private audioBuffer: Record<number, string>;
   private streamSid: string;
@@ -18,8 +17,7 @@ export class StreamService extends EventEmitter {
    */
   constructor(websocket?: WebSocket) {
     super();
-    this.ws = websocket || null;;
-    // this.ws = ws || null;
+    this.ws = websocket || null;
     this.expectedAudioIndex = 0;    // Rastrea qué pieza de audio debe reproducirse a continuación
     this.audioBuffer = {};          // Almacena piezas de audio que llegan fuera de orden
     this.streamSid = '';            // ID único para el flujo de medios de esta llamada
@@ -28,11 +26,19 @@ export class StreamService extends EventEmitter {
   setWebSocket(ws: WebSocket) {
     this.ws = ws;
   }
+
   /**
    * Establece el ID del stream de Twilio
    */
   setStreamSid(streamSid: string): void {
     this.streamSid = streamSid;
+  }
+
+  /**
+   * **NUEVO MÉTODO REQUERIDO**: Obtiene el ID del stream de Twilio
+   */
+  getStreamSid(): string | null {
+    return this.streamSid || null;
   }
 
   /**
@@ -103,3 +109,109 @@ export class StreamService extends EventEmitter {
     this.expectedAudioIndex = 0;
   }
 }
+
+// // services/streamService.ts
+// import { EventEmitter } from 'events';
+// import { v4 as uuidv4 } from 'uuid';
+// import { WebSocket } from 'ws';
+
+// /**
+//  * Servicio para gestión de streaming de audio
+//  */
+// export class StreamService extends EventEmitter {
+//   private ws: WebSocket | null = null;
+//   // private ws: WebSocket | null = null;
+//   private expectedAudioIndex: number;
+//   private audioBuffer: Record<number, string>;
+//   private streamSid: string;
+
+//   /**
+//    * Inicializa la conexión websocket y el seguimiento de audio
+//    */
+//   constructor(websocket?: WebSocket) {
+//     super();
+//     this.ws = websocket || null;;
+//     // this.ws = ws || null;
+//     this.expectedAudioIndex = 0;    // Rastrea qué pieza de audio debe reproducirse a continuación
+//     this.audioBuffer = {};          // Almacena piezas de audio que llegan fuera de orden
+//     this.streamSid = '';            // ID único para el flujo de medios de esta llamada
+//   }
+
+//   setWebSocket(ws: WebSocket) {
+//     this.ws = ws;
+//   }
+//   /**
+//    * Establece el ID del stream de Twilio
+//    */
+//   setStreamSid(streamSid: string): void {
+//     this.streamSid = streamSid;
+//   }
+
+//   /**
+//    * Gestiona el orden de reproducción de audio
+//    */
+//   buffer(index: number | null, audio: string): void {
+//     // El mensaje de bienvenida no tiene índice, se reproduce inmediatamente
+//     if (index === null) {
+//       this.sendAudio(audio);
+//     }
+//     // Si esta es la siguiente pieza esperada, reproducirla y verificar si hay más
+//     else if (index === this.expectedAudioIndex) {
+//       this.sendAudio(audio);
+//       this.expectedAudioIndex++;
+
+//       // Reproduce cualquier pieza almacenada que ahora esté lista en secuencia
+//       while (Object.prototype.hasOwnProperty.call(this.audioBuffer, this.expectedAudioIndex)) {
+//         const bufferedAudio = this.audioBuffer[this.expectedAudioIndex];
+//         this.sendAudio(bufferedAudio);
+//         this.expectedAudioIndex++;
+//       }
+//     }
+//     // Almacena piezas futuras hasta su turno
+//     else {
+//       this.audioBuffer[index] = audio;
+//     }
+//   }
+
+//   /**
+//    * Realmente envía audio al llamante a través de websocket
+//    * Emite evento 'audiosent' con el marcador generado
+//    */
+//   sendAudio(audio: string): void {
+//     // Envía los datos de audio
+//     if (this.ws) {
+//       this.ws.send(
+//         JSON.stringify({
+//           streamSid: this.streamSid,
+//           event: 'media',
+//           media: {
+//             payload: audio,
+//           },
+//         })
+//       );
+
+//       // Crea y envía un marcador único para rastrear cuándo termina de reproducirse el audio
+//       const markLabel = uuidv4();
+//       this.ws.send(
+//         JSON.stringify({
+//           streamSid: this.streamSid,
+//           event: 'mark',
+//           mark: {
+//             name: markLabel
+//           }
+//         })
+//       );
+
+//       // Informa a otras partes del sistema que se envió el audio
+//       this.emit('audiosent', markLabel);
+//     }
+//   }
+
+//   /**
+//    * Limpia el buffer de audio
+//    */
+//   clear(): void {
+//     this.audioBuffer = {};
+//     this.expectedAudioIndex = 0;
+//   }
+// }

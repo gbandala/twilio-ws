@@ -1,16 +1,23 @@
 {
-  "name": "ai-voice-assistant-openai-deepgram",
+  "name": "twilio-ws",
   "version": "1.1.0",
-  "description": "",
+  "description": "twilio websockets bd",
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
     "build": "tsc",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "lint": "eslint . --ext .ts"
+    "build:watch": "tsc --watch",
+    "clean": "rimraf dist",
+    "lint": "eslint src/**/*.ts"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "twilio",
+    "websocket",
+    "voice",
+    "ai"
+  ],
+  "author": "Gabriel Bandala",
   "license": "MIT",
   "dependencies": {
     "@deepgram/sdk": "^3.3.4",
