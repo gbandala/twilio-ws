@@ -9,7 +9,7 @@ const router = Router();
 router.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
-    message: 'Retell Agents API funcionando correctamente',
+    message: 'Ultravox Agents API funcionando correctamente',
     version: '1.0.0',
   });
 });
@@ -17,9 +17,9 @@ router.get('/health', (req, res) => {
 
 
 // Rutas para WebSocket Configurations
-router.use('/websockets', websocketRoutes);
+router.use('/', websocketRoutes);
 
 // Rutas para Webhooks de Twilio
-router.use('/twilio', twilioWebhookRoutes);
+router.use('/', twilioWebhookRoutes);
 
 export default router;

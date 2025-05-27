@@ -41,42 +41,84 @@ class WebSocketManagerService {
    */
   async initializeWebSockets(wsInstance: any): Promise<void> {
     logger.info('Inicializando WebSockets en la aplicación Express');
-    
+
     // Inicializar el servicio de configuración para cargar las configuraciones desde la BD
     await WebSocketConfigService.initialize();
-    
+
     // Cargar todas las configuraciones activas
     const configs = await WebSocketConfigService.listWebSocketConfigs();
-    
+
     // Inicializar instancias para cada configuración activa
     for (const config of configs) {
       if (config.isActive) {
         this.handleConfigAdded(config);
       }
     }
-    
+
     // Configurar middleware para manejar todas las conexiones WebSocket
-    wsInstance.app.ws('*', (ws: WebSocket, req: Request) => {
-      const path = req.path;
-      const config = WebSocketConfigService.getConfigByBasePath(path);
+    // ...existing code...
+    wsInstance.app.ws('/connection/:phoneNumber/.websocket', async (ws: WebSocket, req: Request) => {
+      // Normaliza el número de teléfono si viene el sufijo
+      let phoneNumber = req.params.phoneNumber;
+       logger.info(`WebSocket connection attempt for phone: ${phoneNumber} (.websocket)`);
+      try {
+        ws.on('error', console.error);
+        const config = await WebSocketConfigService.getWebSocketConfigByPhone(phoneNumber);
 
-      if (!config || !config.isActive) {
-        logger.error(`No hay configuración activa para la ruta: ${path}`);
-        ws.close(1008, 'WebSocket no configurado o inactivo');
-        return;
+        if (!config || !config.isActive) {
+          logger.error(`No hay configuración activa para el número: ${phoneNumber}`);
+          ws.close(1008, 'WebSocket no configurado o inactivo');
+          return;
+        }
+        console.log(`WebSocket conectado para ${phoneNumber}`);
+
+        // Obtener la instancia del WebSocket
+        const instance = this.instances.get(config.id);
+        if (!instance) {
+          logger.error(`Instancia WebSocket no encontrada para la configuración: ${config.id}`);
+          ws.close(1011, 'Instancia WebSocket no encontrada');
+          return;
+        }
+
+        // Manejar la conexión WebSocket
+        this.handleWebSocketConnection(ws, instance);
+      } catch (error) {
+        logger.error('Error al manejar la conexión WebSocket:', error);
+        ws.close(1011, 'Error al manejar la conexión WebSocket');
       }
-
-      // Obtener la instancia del WebSocket
-      const instance = this.instances.get(config.id);
-      if (!instance) {
-        logger.error(`Instancia WebSocket no encontrada para la configuración: ${config.id}`);
-        ws.close(1011, 'Instancia WebSocket no encontrada');
-        return;
-      }
-
-      // Manejar la conexión WebSocket
-      this.handleWebSocketConnection(ws, instance);
     });
+
+    wsInstance.app.ws('/connection/:phoneNumber/.websocket', async (ws: WebSocket, req: Request) => {
+      // Aquí puedes reutilizar el mismo código que la ruta anterior:
+      let phoneNumber = req.params.phoneNumber;
+      logger.info(`WebSocket connection attempt for phone: ${phoneNumber} (.websocket)`);
+      try {
+        ws.on('error', console.error);
+        const config = await WebSocketConfigService.getWebSocketConfigByPhone(phoneNumber);
+
+        if (!config || !config.isActive) {
+          logger.error(`No hay configuración activa para el número: ${phoneNumber}`);
+          ws.close(1008, 'WebSocket no configurado o inactivo');
+          return;
+        }
+        console.log(`WebSocket conectado para ${phoneNumber}`);
+
+        // Obtener la instancia del WebSocket
+        const instance = this.instances.get(config.id);
+        if (!instance) {
+          logger.error(`Instancia WebSocket no encontrada para la configuración: ${config.id}`);
+          ws.close(1011, 'Instancia WebSocket no encontrada');
+          return;
+        }
+
+        // Manejar la conexión WebSocket
+        this.handleWebSocketConnection(ws, instance);
+      } catch (error) {
+        logger.error('Error al manejar la conexión WebSocket:', error);
+        ws.close(1011, 'Error al manejar la conexión WebSocket');
+      }
+    });
+
   }
 
   /**
@@ -84,12 +126,12 @@ class WebSocketManagerService {
    */
   private handleConfigAdded(config: WebSocketConfig): void {
     logger.info(`Nueva configuración WebSocket añadida: ${config.id}`);
-    
+
     // Crear servicios para la nueva configuración
     const gptService = new GptService(config.prompt, config.welcomeMessage);
     const transcriptionService = new TranscriptionService();
     const ttsService = new TtsService(config.voiceModel);
-    
+
     // Almacenar la instancia
     this.instances.set(config.id, {
       config,
@@ -97,7 +139,7 @@ class WebSocketManagerService {
       transcriptionService,
       ttsService
     });
-    
+
     logger.debug(`Instancia WebSocket creada para la configuración: ${config.id}`);
   }
 
@@ -106,18 +148,18 @@ class WebSocketManagerService {
    */
   private handleConfigUpdated(config: WebSocketConfig): void {
     logger.info(`Configuración WebSocket actualizada: ${config.id}`);
-    
+
     // Si la configuración existe, actualizamos los servicios
     if (this.instances.has(config.id)) {
       const currentInstance = this.instances.get(config.id)!;
-      
+
       // Actualizar la configuración
       currentInstance.config = config;
-      
+
       // Actualizar los servicios si es necesario
       currentInstance.gptService.updateSystemPrompt(config.prompt);
       currentInstance.ttsService.updateVoiceModel(config.voiceModel);
-      
+
       logger.debug(`Instancia WebSocket actualizada para la configuración: ${config.id}`);
     } else {
       // Si no existe, crear una nueva instancia
@@ -130,7 +172,7 @@ class WebSocketManagerService {
    */
   private handleConfigRemoved(config: WebSocketConfig): void {
     logger.info(`Configuración WebSocket eliminada: ${config.id}`);
-    
+
     // Eliminar la instancia
     if (this.instances.has(config.id)) {
       this.instances.delete(config.id);
@@ -144,7 +186,7 @@ class WebSocketManagerService {
   private handleWebSocketConnection(ws: WebSocket, instance: WebSocketInstance): void {
     const { gptService, transcriptionService, ttsService } = instance;
     const connectionId = Date.now().toString(); // ID único para esta conexión
-    
+
     logger.info(`Nueva conexión WebSocket para ${instance.config.id}`);
 
     // Inicializar el índice de respuesta para esta conexión
@@ -157,7 +199,7 @@ class WebSocketManagerService {
     ws.on('message', async (message) => {
       try {
         const data = JSON.parse(message.toString());
-        
+
         if (data.event === 'start') {
           logger.debug(`Evento 'start' recibido para ${instance.config.id}`);
           // Configurar el streamSid cuando se recibe un evento start
@@ -194,7 +236,7 @@ class WebSocketManagerService {
       logger.debug(`Respuesta parcial GPT recibida: ${gptReplyData.partialResponse}`);
       // Enviar texto a TTS service
       ttsService.generate(gptReplyData.partialResponse);
-      
+
       // Guardar el índice de respuesta para esta conexión
       this.responseIndices.set(connectionId, gptReplyData.partialResponseIndex);
     });

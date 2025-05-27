@@ -50,8 +50,8 @@ export const errorHandler = (
       res.status(503).json({
         success: false,
         error: {
-          code: 'RETELL_API_SERVICE_UNAVAILABLE',
-          message: 'No se pudo conectar con la API de Retell',
+          code: 'ULTRAVOX_API_SERVICE_UNAVAILABLE',
+          message: 'No se pudo conectar con la API de Ultravox',
           details: axiosError.message
         }
       });
