@@ -9,6 +9,6 @@ const router = Router();
  * @desc    Webhook para llamadas entrantes de Twilio
  * @access  Público
  */
-router.post('/incoming/:phoneNumber', twilioWebhookController.handleIncomingCall);
+// router.post('/incoming/:phoneNumber', twilioWebhookController.handleIncomingCall);
 
 export default router;

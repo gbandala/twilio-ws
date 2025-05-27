@@ -1,3 +1,4 @@
+
 import WebSocket from 'ws';
 import { Request } from 'express';
 import WebSocketConfigService from './wsService';
@@ -16,6 +17,30 @@ interface WebSocketInstance {
   gptService: GptService;
   transcriptionService: TranscriptionService;
   ttsService: TtsService;
+  streamService: StreamService;
+}
+
+/**
+ * Interfaz para mensajes de Twilio (siguiendo patrón de app.ts)
+ */
+interface TwilioMessage {
+  event: string;
+  streamSid?: string;
+  start?: {
+    streamSid: string;
+    callSid: string;
+    customParameters?: {
+      phoneNumber?: string;
+      callerNumber?: string;
+    };
+  };
+  media?: {
+    payload: string;
+  };
+  mark?: {
+    name: string;
+  };
+  sequenceNumber?: number;
 }
 
 /**
@@ -23,11 +48,16 @@ interface WebSocketInstance {
  */
 class WebSocketManagerService {
   private instances: Map<string, WebSocketInstance>;
-  private responseIndices: Map<string, number | null>;
+  private activeConnections: Map<string, {
+    config: WebSocketConfig;
+    services: WebSocketInstance;
+    marks: string[];
+    interactionCount: number;
+  }>;
 
   constructor() {
     this.instances = new Map();
-    this.responseIndices = new Map();
+    this.activeConnections = new Map();
     logger.info('WebSocketManagerService inicializado');
 
     // Suscribirse a eventos de configuración
@@ -55,70 +85,167 @@ class WebSocketManagerService {
       }
     }
 
-    // Configurar middleware para manejar todas las conexiones WebSocket
-    // ...existing code...
-    wsInstance.app.ws('/connection/:phoneNumber/.websocket', async (ws: WebSocket, req: Request) => {
-      // Normaliza el número de teléfono si viene el sufijo
-      let phoneNumber = req.params.phoneNumber;
-       logger.info(`WebSocket connection attempt for phone: ${phoneNumber} (.websocket)`);
+    // **CAMBIO PRINCIPAL**: Un solo endpoint /connection que maneja todos los números
+    wsInstance.app.ws('/connection', async (ws: WebSocket, req: Request) => {
+      logger.info('Nueva conexión WebSocket establecida');
+      
       try {
         ws.on('error', console.error);
-        const config = await WebSocketConfigService.getWebSocketConfigByPhone(phoneNumber);
 
-        if (!config || !config.isActive) {
-          logger.error(`No hay configuración activa para el número: ${phoneNumber}`);
-          ws.close(1008, 'WebSocket no configurado o inactivo');
-          return;
-        }
-        console.log(`WebSocket conectado para ${phoneNumber}`);
+        // Variables para rastrear la llamada 
+        let streamSid: string;
+        let callSid: string;
+        let phoneNumber: string;
+        let connectionConfig: WebSocketConfig;
+        let connectionServices: WebSocketInstance | undefined;
 
-        // Obtener la instancia del WebSocket
-        const instance = this.instances.get(config.id);
-        if (!instance) {
-          logger.error(`Instancia WebSocket no encontrada para la configuración: ${config.id}`);
-          ws.close(1011, 'Instancia WebSocket no encontrada');
-          return;
-        }
+        // Manejar mensajes entrantes de Twilio
+        ws.on('message', async (data: Buffer | ArrayBuffer | Buffer[]) => {
+          try {
+            const msg: TwilioMessage = JSON.parse(data.toString());
+            logger.debug(`Mensaje recibido: ${msg.event}`, { streamSid, phoneNumber });
 
-        // Manejar la conexión WebSocket
-        this.handleWebSocketConnection(ws, instance);
+            if (msg.event === 'start' && msg.start) {
+              // **OBTENER NÚMERO DE PARÁMETROS PERSONALIZADOS**
+              streamSid = msg.start.streamSid;
+              callSid = msg.start.callSid;
+              phoneNumber = msg.start.customParameters?.phoneNumber || '';
+
+              logger.info(`Iniciando Media Stream para ${streamSid}, teléfono: ${phoneNumber}`);
+
+              // Obtener configuración por número de teléfono
+              try {
+                connectionConfig = await WebSocketConfigService.getWebSocketConfigByPhone(phoneNumber);
+                
+                if (!connectionConfig || !connectionConfig.isActive) {
+                  logger.error(`No hay configuración activa para el número: ${phoneNumber}`);
+                  ws.close(1008, 'WebSocket no configurado o inactivo');
+                  return;
+                }
+
+                // Obtener servicios para esta configuración
+                connectionServices = this.instances.get(connectionConfig.id);
+                if (!connectionServices) {
+                  logger.error(`Instancia WebSocket no encontrada para la configuración: ${connectionConfig.id}`);
+                  ws.close(1011, 'Instancia WebSocket no encontrada');
+                  return;
+                }
+                // TypeScript: connectionServices is guaranteed to be defined here
+
+                // Configurar servicios para esta conexión específica
+                connectionServices.streamService.setStreamSid(streamSid);
+                connectionServices.gptService.setCallSid(callSid);
+
+                // Almacenar conexión activa
+                this.activeConnections.set(streamSid, {
+                  config: connectionConfig,
+                  services: connectionServices,
+                  marks: [],
+                  interactionCount: 0
+                });
+
+                // Configurar event listeners para esta conexión
+                this.setupEventListeners(ws, streamSid, connectionServices);
+
+                // Enviar mensaje de bienvenida
+                logger.info(`Enviando mensaje de bienvenida para ${phoneNumber}`);
+                connectionServices.ttsService.generate(
+                  connectionConfig.welcomeMessage || 'Hello, how can I help you today?'
+                );
+
+              } catch (configError) {
+                logger.error(`Error obteniendo configuración para ${phoneNumber}:`, configError);
+                ws.close(1008, 'Error de configuración');
+                return;
+              }
+            }
+            else if (msg.event === 'media' && msg.media && connectionServices) {
+              // Envío de audio a transcripción
+              connectionServices.transcriptionService.send(msg.media.payload);
+            }
+            else if (msg.event === 'mark' && msg.mark && streamSid) {
+              // Audio terminó de reproducirse
+              const connection = this.activeConnections.get(streamSid);
+              if (connection) {
+                const label = msg.mark.name;
+                logger.debug(`Audio completado (${msg.sequenceNumber}): ${label}`);
+                connection.marks = connection.marks.filter(m => m !== label);
+              }
+            }
+            else if (msg.event === 'stop' && streamSid) {
+              // Llamada finalizada
+              logger.info(`Media stream ${streamSid} finalizado`);
+              this.activeConnections.delete(streamSid);
+            }
+
+          } catch (error) {
+            logger.error('Error procesando mensaje WebSocket:', error);
+          }
+        });
+
+        // Listener para cierre de conexión
+        ws.on('close', () => {
+          logger.info(`Conexión WebSocket cerrada para streamSid: ${streamSid}`);
+          if (streamSid) {
+            this.activeConnections.delete(streamSid);
+          }
+        });
+
+        // Listener para errores de conexión
+        ws.on('error', (error) => {
+          logger.error(`Error en conexión WebSocket:`, error);
+        });
+
       } catch (error) {
         logger.error('Error al manejar la conexión WebSocket:', error);
         ws.close(1011, 'Error al manejar la conexión WebSocket');
       }
     });
+  }
 
-    wsInstance.app.ws('/connection/:phoneNumber/.websocket', async (ws: WebSocket, req: Request) => {
-      // Aquí puedes reutilizar el mismo código que la ruta anterior:
-      let phoneNumber = req.params.phoneNumber;
-      logger.info(`WebSocket connection attempt for phone: ${phoneNumber} (.websocket)`);
-      try {
-        ws.on('error', console.error);
-        const config = await WebSocketConfigService.getWebSocketConfigByPhone(phoneNumber);
+  /**
+   * Configurar event listeners para una conexión específica
+   */
+  private setupEventListeners(ws: WebSocket, streamSid: string, services: WebSocketInstance): void {
+    const connection = this.activeConnections.get(streamSid);
+    if (!connection) return;
 
-        if (!config || !config.isActive) {
-          logger.error(`No hay configuración activa para el número: ${phoneNumber}`);
-          ws.close(1008, 'WebSocket no configurado o inactivo');
-          return;
-        }
-        console.log(`WebSocket conectado para ${phoneNumber}`);
-
-        // Obtener la instancia del WebSocket
-        const instance = this.instances.get(config.id);
-        if (!instance) {
-          logger.error(`Instancia WebSocket no encontrada para la configuración: ${config.id}`);
-          ws.close(1011, 'Instancia WebSocket no encontrada');
-          return;
-        }
-
-        // Manejar la conexión WebSocket
-        this.handleWebSocketConnection(ws, instance);
-      } catch (error) {
-        logger.error('Error al manejar la conexión WebSocket:', error);
-        ws.close(1011, 'Error al manejar la conexión WebSocket');
+    // Manejo de interrupciones (siguiendo patrón de app.ts)
+    services.transcriptionService.on('utterance', async (text: string) => {
+      if (connection.marks.length > 0 && text?.length > 5) {
+        logger.debug('Interrupción detectada, limpiando stream');
+        ws.send(JSON.stringify({
+          streamSid,
+          event: 'clear',
+        }));
       }
     });
 
+    // Proceso de transcripción -> GPT
+    services.transcriptionService.on('transcription', async (text: string) => {
+      if (!text) return;
+      
+      logger.info(`Interaction ${connection.interactionCount} – STT -> GPT: ${text}`);
+      services.gptService.completion(text, connection.interactionCount);
+      connection.interactionCount += 1;
+    });
+
+    // Respuesta de GPT -> TTS
+    services.gptService.on('gptreply', async (gptReply: any, icount: number) => {
+      logger.info(`Interaction ${icount}: GPT -> TTS: ${gptReply.partialResponse}`);
+      services.ttsService.generate(gptReply);
+    });
+
+    // Audio generado -> Stream
+    services.ttsService.on('speech', (responseIndex: number | null, audio: string, label: string, icount: number) => {
+      logger.info(`Interaction ${icount}: TTS -> TWILIO: ${label}`);
+      services.streamService.buffer(responseIndex, audio);
+    });
+
+    // Rastreo de audio enviado
+    services.streamService.on('audiosent', (markLabel: string) => {
+      connection.marks.push(markLabel);
+    });
   }
 
   /**
@@ -131,13 +258,15 @@ class WebSocketManagerService {
     const gptService = new GptService(config.prompt, config.welcomeMessage);
     const transcriptionService = new TranscriptionService();
     const ttsService = new TtsService(config.voiceModel);
+    const streamService = new StreamService(undefined); // Se configurará en cada conexión
 
     // Almacenar la instancia
     this.instances.set(config.id, {
       config,
       gptService,
       transcriptionService,
-      ttsService
+      ttsService,
+      streamService
     });
 
     logger.debug(`Instancia WebSocket creada para la configuración: ${config.id}`);
@@ -149,20 +278,13 @@ class WebSocketManagerService {
   private handleConfigUpdated(config: WebSocketConfig): void {
     logger.info(`Configuración WebSocket actualizada: ${config.id}`);
 
-    // Si la configuración existe, actualizamos los servicios
     if (this.instances.has(config.id)) {
       const currentInstance = this.instances.get(config.id)!;
-
-      // Actualizar la configuración
       currentInstance.config = config;
-
-      // Actualizar los servicios si es necesario
       currentInstance.gptService.updateSystemPrompt(config.prompt);
       currentInstance.ttsService.updateVoiceModel(config.voiceModel);
-
       logger.debug(`Instancia WebSocket actualizada para la configuración: ${config.id}`);
     } else {
-      // Si no existe, crear una nueva instancia
       this.handleConfigAdded(config);
     }
   }
@@ -173,100 +295,10 @@ class WebSocketManagerService {
   private handleConfigRemoved(config: WebSocketConfig): void {
     logger.info(`Configuración WebSocket eliminada: ${config.id}`);
 
-    // Eliminar la instancia
     if (this.instances.has(config.id)) {
       this.instances.delete(config.id);
       logger.debug(`Instancia WebSocket eliminada para la configuración: ${config.id}`);
     }
-  }
-
-  /**
-   * Manejar una conexión WebSocket
-   */
-  private handleWebSocketConnection(ws: WebSocket, instance: WebSocketInstance): void {
-    const { gptService, transcriptionService, ttsService } = instance;
-    const connectionId = Date.now().toString(); // ID único para esta conexión
-
-    logger.info(`Nueva conexión WebSocket para ${instance.config.id}`);
-
-    // Inicializar el índice de respuesta para esta conexión
-    this.responseIndices.set(connectionId, null);
-
-    // Crear el servicio de stream con el websocket actual
-    const streamService = new StreamService(ws);
-
-    // Manejar mensajes entrantes
-    ws.on('message', async (message) => {
-      try {
-        const data = JSON.parse(message.toString());
-
-        if (data.event === 'start') {
-          logger.debug(`Evento 'start' recibido para ${instance.config.id}`);
-          // Configurar el streamSid cuando se recibe un evento start
-          if (data.streamSid) {
-            streamService.setStreamSid(data.streamSid);
-            gptService.setCallSid(data.streamSid);
-          }
-        } else if (data.event === 'media') {
-          // Enviar audio a transcription service
-          transcriptionService.send(data.media.payload);
-        } else if (data.event === 'stop') {
-          logger.debug(`Evento 'stop' recibido para ${instance.config.id}`);
-          // Limpiar recursos al finalizar
-          this.responseIndices.delete(connectionId);
-        } else if (data.event === 'mark') {
-          // Procesar eventos de marca si es necesario
-          logger.debug(`Marca recibida: ${data.mark?.name}`);
-        }
-      } catch (error) {
-        logger.error('Error procesando mensaje WebSocket:', error);
-      }
-    });
-
-    // Configurar listener para transcripciones
-    transcriptionService.on('transcription', (text) => {
-      logger.debug(`Transcripción recibida: ${text}`);
-      // Enviar texto a GPT service con contador de interacción
-      const interactionCount = 0; // Debería llevarse un contador de interacciones
-      gptService.completion(text, interactionCount);
-    });
-
-    // Configurar listener para respuestas parciales de GPT
-    gptService.on('gptreply', (gptReplyData: any, interactionCount: number) => {
-      logger.debug(`Respuesta parcial GPT recibida: ${gptReplyData.partialResponse}`);
-      // Enviar texto a TTS service
-      ttsService.generate(gptReplyData.partialResponse);
-
-      // Guardar el índice de respuesta para esta conexión
-      this.responseIndices.set(connectionId, gptReplyData.partialResponseIndex);
-    });
-
-    // Configurar listener para audio generado
-    ttsService.on('audio', (audio) => {
-      logger.debug('Audio generado recibido');
-      // Obtener el índice actual para esta conexión
-      const currentIndex = this.responseIndices.get(connectionId) ?? null;
-      // Enviar audio al stream service con el índice de respuesta
-      streamService.buffer(currentIndex, audio);
-    });
-
-    // Listener para cuando se envía el audio
-    streamService.on('audiosent', (markLabel) => {
-      logger.debug(`Audio enviado con marca: ${markLabel}`);
-      // Aquí podrías manejar eventos adicionales después de enviar el audio
-    });
-
-    // Listener para cierre de conexión
-    ws.on('close', () => {
-      logger.info(`Conexión WebSocket cerrada para ${instance.config.id}`);
-      // Limpiar recursos
-      this.responseIndices.delete(connectionId);
-    });
-
-    // Listener para errores de conexión
-    ws.on('error', (error) => {
-      logger.error(`Error en conexión WebSocket para ${instance.config.id}:`, error);
-    });
   }
 }
 

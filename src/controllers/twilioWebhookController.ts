@@ -33,12 +33,8 @@ class TwilioWebhookController {
       console.log('........................Llamada entrante a Twilio Webhook.................');
       // Obtener el número de teléfono de los parámetros o usar un valor por defecto
       const phoneNumber = req.params.phoneNumber || 'default';
-
-      // logger.debug(`..............Llamada entrante para el número: ${phoneNumber}`);
-
       // Buscar la configuración correspondiente al número de teléfono
       let config;
-
       try {
         config = await websocketConfigService.getWebSocketConfigByPhone(phoneNumber);
         // console.log('.............Configuración de WebSocket para el número:', config);
@@ -55,28 +51,12 @@ class TwilioWebhookController {
       }
 
       // Obtener el servidor desde las variables de entorno
-      const serverHost = process.env.SERVER || req.get('host') || 'localhost';
-     const websocketPath = `/connection/${phoneNumber}`;
-      // console.log(`............Servidor WebSocket: ${serverHost}${websocketPath}`);
-      // console.log(`............Servidor WebSocket: ${serverHost}${config.basePath}`);
-      // 
-
-      // Generar TwiML response para establecer la conexión WebSocket
-      // const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-      //     <Response>
-      //       <Say language="es-MX">La llamada puede ser monitoreada o grabada.</Say>
-      //       <Connect>
-      //         <Stream url="wss://${serverHost}${websocketPath}" />
-      //       </Connect>
-      //     </Response>`;
-
-      // // Enviar respuesta
-      // res.type('text/xml');
-      // res.send(twiml);
+      const serverHost = process.env.SERVER || 'localhost';
+      const websocketPath = `/connection/${phoneNumber}`;
       const VoiceResponse = twiml.VoiceResponse;
       const response = new VoiceResponse();
       const connect = response.connect();
-      response.say({ language: 'es-MX' }, 'La llamada puede ser monitoreada o grabada.');
+      response.say({ language: 'es-MX' }, 'La llamada puede ser monitoreada o grabada en cualquier momento.');
       // Indica a Twilio dónde conectar el flujo de medios de la llamada
       connect.stream({ url: `wss://${serverHost}${websocketPath}` });
       res.type('text/xml');

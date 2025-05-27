@@ -17,9 +17,9 @@ router.get('/health', (req, res) => {
 
 
 // Rutas para WebSocket Configurations
-router.use('/', websocketRoutes);
+router.use('/websockets', websocketRoutes);
 
 // Rutas para Webhooks de Twilio
-router.use('/', twilioWebhookRoutes);
+// router.use('/', twilioWebhookRoutes);
 
 export default router;

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import WebSocketConfigController from '../controllers/wsController';
 
+
 const router = Router();
 
 /**
@@ -8,14 +9,14 @@ const router = Router();
  * @desc    Obtener todas las configuraciones de WebSocket
  * @access  Privado
  */
-router.get('/websockets', WebSocketConfigController.getAllWebSocketConfigs);
+router.get('/list', WebSocketConfigController.getAllWebSocketConfigs);
 
 /**
  * @route   GET /api/websockets/:id
  * @desc    Obtener una configuración de WebSocket por ID
  * @access  Privado
  */
-router.get('/id/:id', WebSocketConfigController.getWebSocketConfigById);
+router.get('/:id', WebSocketConfigController.getWebSocketConfigById);
 
 /**
  * @route   GET /api/websockets/phone/:phoneNumber
@@ -36,13 +37,19 @@ router.post('/', WebSocketConfigController.createWebSocketConfig);
  * @desc    Actualizar una configuración de WebSocket
  * @access  Privado
  */
-router.put('/id/:id', WebSocketConfigController.updateWebSocketConfig);
+router.put('/:id', WebSocketConfigController.updateWebSocketConfig);
 
 /**
  * @route   DELETE /api/websockets/:id
  * @desc    Eliminar una configuración de WebSocket
  * @access  Privado
  */
-router.delete('/id/:id', WebSocketConfigController.deleteWebSocketConfig);
+router.delete('/:id', WebSocketConfigController.deleteWebSocketConfig);
+/**
+ * @route   POST /api/twilio/incoming/:phoneNumber?
+ * @desc    Webhook para llamadas entrantes de Twilio
+ * @access  Público
+ */
+// router.post('/incoming/:phoneNumber', twilioWebhookController.handleIncomingCall);
 
 export default router;
