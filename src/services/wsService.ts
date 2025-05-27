@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import { WebSocketConfig } from '../models/wsModel';
 import { CrearWebSocketConfigDTO, ActualizarWebSocketConfigDTO } from '../dtos/wsDTO';
 import { createError } from '../middleware/errorHandler';
-import logger from '../utils/logger';
+import  { logger } from '../utils/logger';
 
 /**
  * Servicio para gestionar las configuraciones de WebSocket
@@ -14,7 +14,7 @@ class WebSocketConfigService extends EventEmitter {
   constructor() {
     super();
     this.configurations = new Map<string, WebSocketConfig>();
-    logger.info('WebSocketConfigService inicializado');
+   logger.detailed('WS','WebSocketConfigService inicializado');
   }
 
   /**
@@ -32,13 +32,13 @@ class WebSocketConfigService extends EventEmitter {
       // Guardar las configuraciones en memoria
       configs.forEach(config => {
         this.configurations.set(config.id, config);
-        logger.debug(`Configuración cargada: ${config.id}`);
+        logger.detailed(config.id,`Configuración cargada: ${config.id}`);
       });
 
       this.initialized = true;
-      logger.info(`Se cargaron ${configs.length} configuraciones de WebSocket desde la base de datos`);
+      logger.detailed(configs.length.toString(),`Se cargaron ${configs.length} configuraciones de WebSocket desde la base de datos`);
     } catch (error) {
-      logger.error('Error al inicializar WebSocketConfigService:', error);
+      logger.critical('error','Error al inicializar WebSocketConfigService:', error);
       throw error;
     }
   }
@@ -115,7 +115,7 @@ class WebSocketConfigService extends EventEmitter {
 
       return newConfig;
     } catch (error) {
-      logger.error('Error al crear configuración de WebSocket:', error);
+      logger.critical('error','Error al crear configuración de WebSocket:', error);
       throw error;
     }
   }
@@ -149,7 +149,7 @@ class WebSocketConfigService extends EventEmitter {
 
       return config;
     } catch (error) {
-      logger.error(`Error al actualizar configuración de WebSocket ${id}:`, error);
+      logger.critical('error',`Error al actualizar configuración de WebSocket ${id}:`, error);
       throw error;
     }
   }
@@ -172,7 +172,7 @@ class WebSocketConfigService extends EventEmitter {
       // Emitir evento de configuración eliminada
       this.emit('configRemoved', config);
     } catch (error) {
-      logger.error(`Error al eliminar configuración de WebSocket ${id}:`, error);
+      logger.critical('error',`Error al eliminar configuración de WebSocket ${id}:`, error);
       throw error;
     }
   }

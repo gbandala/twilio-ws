@@ -10,7 +10,7 @@ import Database from "./libs/database";
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import routes from './routes';
 import WebSocketManagerService from './services/wsManagerService';
-import logger from '../src/utils/logger';
+import { logger, LogLevel } from '../src/utils/logger';
 
 // Cargar variables de entorno
 config();
@@ -196,6 +196,179 @@ class App {
       }
     });
 
+    // === ENDPOINTS DE LOGGING ===
+
+    // Obtener estado actual del logging
+    this.app.get('/debug/logging', (req: Request, res: Response) => {
+      try {
+        const stats = logger.getStats();
+        const connections = WebSocketManagerService.getStatus();
+
+        res.json({
+          success: true,
+          timestamp: new Date().toISOString(),
+          logging: {
+            currentLevel: stats.currentLevel,
+            availableLevels: ['CRITICAL', 'IMPORTANT', 'DETAILED', 'VERBOSE'],
+            throttledMessages: stats.throttledMessages,
+            description: {
+              CRITICAL: 'Solo errores y eventos críticos',
+              IMPORTANT: 'Transcripciones, GPT, conexiones (recomendado)',
+              DETAILED: 'Incluye audio, marks, debug general',
+              VERBOSE: 'Todo, incluyendo cada packet de audio'
+            }
+          },
+          connections: connections,
+          counters: stats.counters
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Error desconocido'
+        });
+      }
+    });
+
+    // Cambiar nivel de logging dinámicamente
+    this.app.post('/debug/logging/level', (req: Request, res: Response) => {
+      try {
+        const { level } = req.body;
+
+        if (!level || !['CRITICAL', 'IMPORTANT', 'DETAILED', 'VERBOSE'].includes(level)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Nivel inválido. Usa: CRITICAL, IMPORTANT, DETAILED, VERBOSE'
+          });
+        }
+
+        const logLevel = LogLevel[level as keyof typeof LogLevel];
+        logger.setLevel(logLevel);
+
+        res.json({
+          success: true,
+          message: `Nivel de logging cambiado a ${level}`,
+          timestamp: new Date().toISOString(),
+          newLevel: level
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Error desconocido'
+        });
+      }
+    });
+
+    // Reset contadores de logging
+    this.app.post('/debug/logging/reset', (req: Request, res: Response) => {
+      try {
+        logger.reset();
+        res.json({
+          success: true,
+          message: 'Contadores de logging reseteados',
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Error desconocido'
+        });
+      }
+    });
+
+    // Estado de WebSockets con resumen
+    this.app.get('/debug/websockets/summary', (req: Request, res: Response) => {
+      try {
+        const connections = WebSocketManagerService.getStatus();
+        const summary = {
+          totalConnections: connections.activeConnections,
+          totalAudioPackets: connections.connections.reduce((sum, conn) => sum + conn.audioPackets, 0),
+          totalTranscriptions: connections.connections.reduce((sum, conn) => sum + conn.transcriptions, 0),
+          totalInteractions: connections.connections.reduce((sum, conn) => sum + conn.interactionCount, 0),
+          avgDuration: connections.connections.length > 0
+            ? Math.round(connections.connections.reduce((sum, conn) => sum + conn.duration, 0) / connections.connections.length)
+            : 0,
+          activePhones: [...new Set(connections.connections.map(c => c.phoneNumber))]
+        };
+
+        res.json({
+          success: true,
+          timestamp: new Date().toISOString(),
+          summary,
+          connections: connections.connections
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Error desconocido'
+        });
+      }
+    });
+
+    // Debug específico de una conexión
+    this.app.get('/debug/connection/:connectionId', (req: Request, res: Response) => {
+      try {
+        const connectionId = req.params.connectionId;
+        const debug = WebSocketManagerService.getConnectionDebug(connectionId);
+
+        if (!debug) {
+          return res.status(404).json({
+            success: false,
+            message: 'Conexión no encontrada'
+          });
+        }
+
+        res.json({
+          success: true,
+          timestamp: new Date().toISOString(),
+          data: debug
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Error desconocido'
+        });
+      }
+    });
+
+    // Test de servicios externos
+    this.app.get('/debug/services/test', async (req: Request, res: Response) => {
+      try {
+        const tests = {
+          deepgram: {
+            apiKey: process.env.DEEPGRAM_API_KEY ? 'Configurada' : 'NO CONFIGURADA',
+            voiceModel: process.env.VOICE_MODEL || 'No configurado'
+          },
+          openai: {
+            apiKey: process.env.OPENAI_API_KEY ? 'Configurada' : 'NO CONFIGURADA'
+          },
+          twilio: {
+            accountSid: process.env.TWILIO_ACCOUNT_SID ? 'Configurado' : 'NO CONFIGURADO',
+            authToken: process.env.TWILIO_AUTH_TOKEN ? 'Configurado' : 'NO CONFIGURADO'
+          }
+        };
+
+        // Test básico de conectividad (opcional)
+        // Aquí podrías hacer requests de prueba a los servicios
+
+        res.json({
+          success: true,
+          timestamp: new Date().toISOString(),
+          environment: {
+            NODE_ENV: process.env.NODE_ENV,
+            SERVER: process.env.SERVER,
+            LOG_LEVEL: process.env.LOG_LEVEL || 'IMPORTANT'
+          },
+          services: tests,
+          status: 'All services configured'
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Error desconocido'
+        });
+      }
+    });
+
   }
 
   /**
@@ -211,7 +384,7 @@ class App {
         const toNumber = req.body.To;
         const callSid = req.body.CallSid;
 
-        logger.info(`📞 Llamada entrante: ${fromNumber} -> ${toNumber}, CallSid: ${callSid}`);
+        logger.important(callSid,`📞 Llamada entrante: ${fromNumber} -> ${toNumber}, CallSid: ${callSid}`);
 
         const VoiceResponse = twiml.VoiceResponse;
         const response = new VoiceResponse();
@@ -232,10 +405,10 @@ class App {
         res.type('text/xml');
         res.end(response.toString());
 
-        logger.debug(`📋 TwiML enviado para ${toNumber}`);
+        logger.important(toNumber,`📋 TwiML enviado para ${toNumber}`);
 
       } catch (err) {
-        logger.error('❌ Error en /incoming:', err);
+        console.error(err,'❌ Error en /incoming:', err);
         res.status(500).send('Error interno del servidor');
       }
     });
@@ -247,7 +420,7 @@ class App {
         const fromNumber = req.body.From;
         const callSid = req.body.CallSid;
 
-        logger.info(`📞 Llamada específica: ${fromNumber} -> ${phoneNumber}, CallSid: ${callSid}`);
+        logger.important(callSid,`📞 Llamada específica: ${fromNumber} -> ${phoneNumber}, CallSid: ${callSid}`);
 
         const VoiceResponse = twiml.VoiceResponse;
         const response = new VoiceResponse();
@@ -267,7 +440,7 @@ class App {
         res.end(response.toString());
 
       } catch (err) {
-        logger.error(`❌ Error en /incoming/${req.params.phoneNumber}:`, err);
+        console.error(`❌ Error en /incoming/${req.params.phoneNumber}:`, err);
         res.status(500).send('Error interno del servidor');
       }
     });

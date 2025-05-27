@@ -2,7 +2,7 @@
 import { Request, Response, NextFunction } from 'express';
 import websocketConfigService from '../services/wsService';
 import { createError } from '../middleware/errorHandler';
-import logger from '../utils/logger';
+import  { logger } from '../utils/logger';
 import { twiml } from 'twilio';
 
 // Interfaz para mensajes de Twilio
@@ -39,13 +39,13 @@ class TwilioWebhookController {
         config = await websocketConfigService.getWebSocketConfigByPhone(phoneNumber);
         // console.log('.............Configuración de WebSocket para el número:', config);
       } catch (error) {
-        logger.error(`No se encontró configuración para el número: ${phoneNumber}`);
+        logger.critical('error',`No se encontró configuración para el número: ${phoneNumber}`);
         next(createError(`No hay configuración activa para el número: ${phoneNumber}`, 404, 'CONFIG_NOT_FOUND'));
         return;
       }
 
       if (!config.isActive) {
-        logger.error(`La configuración para el número ${phoneNumber} está inactiva`);
+        logger.critical('error',`La configuración para el número ${phoneNumber} está inactiva`);
         next(createError(`La configuración para el número ${phoneNumber} está inactiva`, 400, 'CONFIG_INACTIVE'));
         return;
       }
@@ -64,7 +64,7 @@ class TwilioWebhookController {
 
       // logger.debug(`TwiML enviado para la conexión WebSocket: ${websocketPath}`);
     } catch (error) {
-      logger.error('Error al manejar la llamada entrante:', error);
+      logger.critical('error','Error al manejar la llamada entrante:', error);
       next(createError('Error al manejar la llamada entrante', 500, 'INTERNAL_SERVER_ERROR'));
       next(error);
     }

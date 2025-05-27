@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import logger from '../utils/logger';
+import  { logger } from '../utils/logger';
 import axios from 'axios';
 
 /**
@@ -31,9 +31,9 @@ export const errorHandler = (
       // La API respondió con un código de error
       const statusCode = axiosError.response.status;
       const responseData = axiosError.response.data;
-      
-      logger.error(`API Error (${statusCode}): ${JSON.stringify(responseData)}`);
-      
+
+      logger.detailed('error',`API Error (${statusCode}): ${JSON.stringify(responseData)}`);
+
       res.status(statusCode).json({
         success: false,
         error: {
@@ -45,8 +45,8 @@ export const errorHandler = (
       return;
     } else if (axiosError.request) {
       // La petición fue realizada pero no se recibió respuesta
-      logger.error(`API Request Error: No response received - ${axiosError.message}`);
-      
+      logger.critical('error',`API Request Error: No response received - ${axiosError.message}`);
+
       res.status(503).json({
         success: false,
         error: {
@@ -60,9 +60,9 @@ export const errorHandler = (
   }
 
   // Log del error
-  logger.error(`Error (${statusCode}): ${message}`);
+  logger.critical('error',`Error (${statusCode}): ${message}`);
   if (err.stack) {
-    logger.error(`Stack Trace: ${err.stack}`);
+    logger.critical('error',`Stack Trace: ${err.stack}`);
   }
 
   // Enviar respuesta

@@ -1,7 +1,7 @@
 import { Sequelize, SequelizeOptions } from "sequelize-typescript";
 import * as dotenv from "dotenv";
 import { WebSocketConfig } from "../models/wsModel";
-import logger from "../utils/logger";
+import  { logger } from '../utils/logger';
 
 dotenv.config();
 
@@ -58,17 +58,22 @@ class Database {
       this.sequelize = new Sequelize(connection);
 
       await this.sequelize.authenticate();
-      logger.info(
+      logger.detailed('info',
         "✅ PostgreSQL Connection has been established successfully for database: " + process.env.DB_NAME
       );
       
       // Sincronizar modelos con la base de datos (solo en desarrollo)
       if (process.env.ENV !== Environment.PRODUCTION && process.env.DB_SYNC === 'true') {
         await this.sequelize.sync({ alter: true });
-        logger.info("Base de datos sincronizada exitosamente");
+        logger.detailed('info',
+          "Base de datos sincronizada exitosamente"
+        );
       }
     } catch (err) {
-      logger.error("❌ Unable to connect to the PostgreSQL database: " + process.env.DB_NAME, err);
+      logger.critical('error',
+        "❌ Unable to connect to the PostgreSQL database: " + process.env.DB_NAME,
+        err
+      );
       throw err;
     }
   }

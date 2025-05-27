@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import WebSocketConfigService from '../services/wsService';
 import { WebSocketConfigMapper } from '../dtos/wsMapper';
-import logger from '../utils/logger';
+import  { logger } from '../utils/logger';
 
 /**
  * Controlador para las operaciones con WebSocketConfig
@@ -84,8 +84,8 @@ class WebSocketConfigController {
   async createWebSocketConfig(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const configDTO = WebSocketConfigMapper.fromRequest(req);
-      logger.debug(`Creando WebSocket config con datos: ${JSON.stringify(configDTO)}`);
-      
+      logger.detailed('info', `Creando WebSocket config con datos: ${JSON.stringify(configDTO)}`);
+
       const config = WebSocketConfigMapper.toWebSocketConfig(configDTO);
       const createdConfig = await WebSocketConfigService.createWebSocketConfig(config);
       
@@ -116,7 +116,7 @@ class WebSocketConfigController {
       }
 
       const updateDTO = WebSocketConfigMapper.fromRequestForUpdate(req);
-      logger.debug(`Actualizando WebSocket config ${id} con datos: ${JSON.stringify(updateDTO)}`);
+      logger.detailed('info', `Actualizando WebSocket config ${id} con datos: ${JSON.stringify(updateDTO)}`);
       
       const updatedConfig = await WebSocketConfigService.updateWebSocketConfig(id, updateDTO);
       const responseDTO = WebSocketConfigMapper.toResponseDTO(updatedConfig);
@@ -145,7 +145,7 @@ class WebSocketConfigController {
         return;
       }
 
-      logger.debug(`Eliminando WebSocket config ${id}`);
+      logger.detailed('info', `Eliminando WebSocket config ${id}`);
       
       await WebSocketConfigService.deleteWebSocketConfig(id);
       
